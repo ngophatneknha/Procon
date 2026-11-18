@@ -2,6 +2,8 @@
 
 Hệ thống mô phỏng (Simulator), kiểm định hợp lệ (Validator), lõi tăng tốc C++20 (`hexudon_fast.dll`), bộ giải 7 Heuristic + Metaheuristics (H1–H7, 2-Opt, Regret-2 Auction, Via-Spot Detour, 1-Day Lookahead Rollout), đấu trường đối kháng 4 đội (`MultiTeamArena`) và công cụ trực quan hóa ([visualizer.html](file:///E:/procon/visualizer.html)) cho bài toán **HEXUDON — Procon Việt Nam 2026**.
 
+**Tài liệu:** [ALGORITHMS.md](ALGORITHMS.md) — mô tả chi tiết từng thuật toán · [RESULTS.md](RESULTS.md) — kết quả thí nghiệm · [HEXUDON_MASTER_HANDOFF.md](HEXUDON_MASTER_HANDOFF.md) — luật và kiến trúc.
+
 ## 1. Cấu trúc Thư mục
 
 - [hexudon/models.py](file:///E:/procon/hexudon/models.py): Định nghĩa cấu trúc dữ liệu chuẩn (`MapConfig`, `TerrainType`, `RoadState`, `Spot`, `AgentRole`, `Action`, `DayInput`, `DayResult`, `MatchScore`).
