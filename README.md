@@ -1,4 +1,4 @@
-# Procon Việt Nam 2026 — Tối Ưu Hoá Lộ Trình HEXUDON (Grandmaster Edition)
+# Procon Việt Nam 2026 — Tối Ưu Hoá Lộ Trình HEXUDON
 
 Hệ thống mô phỏng (Simulator), kiểm định hợp lệ (Validator), lõi tăng tốc C++20 (`hexudon_fast.dll`), bộ giải 7 Heuristic + Metaheuristics (H1–H7, 2-Opt, Regret-2 Auction, Via-Spot Detour, 1-Day Lookahead Rollout), đấu trường đối kháng 4 đội (`MultiTeamArena`) và công cụ trực quan hóa ([visualizer.html](file:///E:/procon/visualizer.html)) cho bài toán **HEXUDON — Procon Việt Nam 2026**.
 
