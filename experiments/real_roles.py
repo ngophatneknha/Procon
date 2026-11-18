@@ -1,3 +1,4 @@
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 """Force role sets on a real board. Usage: python real_roles.py <q> <budget_ms> <refuel sets e.g. 0 0,1 0,1,2>"""
 import sys, time
 from multiprocessing import Pool

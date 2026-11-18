@@ -35,9 +35,9 @@ cd E:\procon
 python -m unittest tests/test_hexudon.py -v        # 8 test luật + C++ vs Python + end-to-end (~40 s vì có ES)
 python run_benchmark.py                            # 4 kịch bản 1 đội + giải đấu 4 đội, ghi sample_replays.json
 python build_visualizer.py                         # tạo visualizer.html (mở bằng trình duyệt)
-python bench_wide.py 12 120                        # 12 map ngẫu nhiên, ngân sách 120 ms/ngày
-python bench_wide.py 0 120 39,13,105               # chỉ chạy các map id 39, 13, 105
-python exp_roles.py 39 13                          # thử MỌI tập xe tiếp xăng trên map 39, 13
+python experiments/bench_wide.py 12 120                        # 12 map ngẫu nhiên, ngân sách 120 ms/ngày
+python experiments/bench_wide.py 0 120 39,13,105               # chỉ chạy các map id 39, 13, 105
+python experiments/exp_roles.py 39 13                          # thử MỌI tập xe tiếp xăng trên map 39, 13
 ```
 
 Biên dịch lại lõi C++ (khi sửa `hexudon/cpp_accel.cpp`):
@@ -49,13 +49,13 @@ C:\msys64\ucrt64\bin\g++.exe -O3 -march=native -std=c++20 -shared -static -o E:\
 Bật/tắt thuật toán bằng biến môi trường (xem mục 16):
 
 ```powershell
-$env:HEX_ES="0"; $env:HEX_ILS="0"; python bench_wide.py 0 120 39     # PowerShell
+$env:HEX_ES="0"; $env:HEX_ILS="0"; python experiments/bench_wide.py 0 120 39     # PowerShell
 ```
 ```bash
-HEX_ES=0 HEX_ILS=0 python bench_wide.py 0 120 39                       # bash
+HEX_ES=0 HEX_ILS=0 python experiments/bench_wide.py 0 120 39                       # bash
 ```
 
-> **Bộ nhớ:** `bench_wide.py` và `exp_roles.py` dùng `Pool(2, maxtasksperchild=1)`. Đừng tăng lên 8 tiến trình: bảng APSP của map 32×32 rất lớn và đã từng làm tràn RAM.
+> **Bộ nhớ:** `experiments/bench_wide.py` và `experiments/exp_roles.py` dùng `Pool(2, maxtasksperchild=1)`. Đừng tăng lên 8 tiến trình: bảng APSP của map 32×32 rất lớn và đã từng làm tràn RAM.
 
 **Chạy một trận đầy đủ bằng code:**
 
@@ -524,14 +524,14 @@ python run_online.py --base-url https://hexudon.hairbui76.id.vn --game-id <id> -
 | `HEX_ES_TIME=<giây>` | đổi thời gian ES |
 | `HEX_ILS=0` | tắt ILS lộ trình |
 | `HEX_HORIZON=0` | luôn dùng lookahead 1 ngày |
-| `HEX_SEED=<n>` | seed cơ sở trong `bench_wide.py` |
+| `HEX_SEED=<n>` | seed cơ sở trong `experiments/bench_wide.py` |
 
 **Mẫu A/B một thuật toán** (ví dụ ILS, 10 map, ngân sách 400 ms, tắt các thuật toán khác để cô lập):
 
 ```bash
 for i in 0 1; do
   HEX_ILS=$i HEX_ES=0 HEX_PLAYSEL=0 HEX_HORIZON=0 \
-  python bench_wide.py 0 400 39,13,5,1,0,3,12,4,15,105 | tail -1
+  python experiments/bench_wide.py 0 400 39,13,5,1,0,3,12,4,15,105 | tail -1
 done
 ```
 

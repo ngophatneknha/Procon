@@ -35,7 +35,7 @@ Khác: `GET /api/game/board` (cấu hình bản đồ, trước khi trận mở 
 Đã cài đặt trong `hexudon/protocol.py` (có test `tests/test_protocol.py` dùng đúng ví dụ trong tài liệu) và `run_online.py`.
 
 ## Hệ quả cho bộ giải
-1. **Số bước mỗi ngày lớn hơn nhiều so với benchmark cũ** (ví dụ 50–200, không phải 24–42). Ở chế độ này F1 và F2 gần như đạt trần; **F3 (số phần) và thời gian là chỗ phân thắng bại**. `bench_wide.py` có `HEX_STEPS=50,200` để đo đúng chế độ này.
+1. **Số bước mỗi ngày lớn hơn nhiều so với benchmark cũ** (ví dụ 50–200, không phải 24–42). Ở chế độ này F1 và F2 gần như đạt trần; **F3 (số phần) và thời gian là chỗ phân thắng bại**. `experiments/bench_wide.py` có `HEX_STEPS=50,200` để đo đúng chế độ này.
 2. **Thời gian chọn vai trò mặc định 60 s** (`agent_selection_time_limit`) và **thời gian mỗi ngày chỉ vài giây** (ví dụ 5 s, gồm cả mạng) ⇒ `run_online.py` giới hạn chọn vai trò ~25 s, ES ~8 s, ngân sách mỗi ngày ≈ 35% `daySeconds`, và luôn gửi ngay một kế hoạch nhanh hợp lệ trước khi tìm sâu.
 3. Giá trị `day` trong body `POST /actions` chưa rõ (đánh số từ 0 hay 1): `run_online.py` thử `day+1` rồi `day` và nhớ giá trị được chấp nhận. **Nên thử trên Practice trước.**
 4. Mapping: `fuelLimits→max_fuel`, `busyThreshold→congested_threshold`, `jammedThreshold→jam_threshold`, `players→num_teams`, `brand→chain_id`, `stocks→max_stock`.

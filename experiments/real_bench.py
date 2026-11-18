@@ -1,3 +1,4 @@
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 """Benchmark on the REAL practice boards saved in ref/board{1..5}.json (agents are synthesized: board has none).
 Usage: python real_bench.py <question 1..5> <budget_ms> [n_agents]"""
 import json, random, sys, time

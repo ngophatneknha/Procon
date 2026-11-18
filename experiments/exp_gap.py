@@ -1,3 +1,4 @@
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 """Gap of plan_day vs exact orienteering optimum (1 patrol, ample fuel, day 1). Usage: python exp_gap.py [n] [budget_ms]"""
 import sys, random, itertools
 from hexudon.generator import generate_map_config

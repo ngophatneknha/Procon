@@ -1,3 +1,4 @@
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 """Wide random benchmark: solver score vs. simple upper bounds, for several time budgets.
 Usage: python bench_wide.py [n_instances] [budget_ms,...]"""
 import sys, json, random
