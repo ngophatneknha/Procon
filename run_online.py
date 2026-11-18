@@ -7,7 +7,7 @@
 Per day: submit a quick valid plan at once, then a deeper plan; resubmit only if (F1,F2,F3) is strictly
 better and there is time left (the last valid submission counts, F4 uses it).
 """
-import argparse, os, sys, time, urllib.error
+import argparse, json, os, sys, time, urllib.error
 
 from hexudon.client import ContestApiClient
 from hexudon.engine import HexudonEngine
@@ -28,20 +28,29 @@ def main():
     ap.add_argument("--game-id", required=True)
     ap.add_argument("--practice", action="store_true")
     ap.add_argument("--dry", action="store_true")
-    ap.add_argument("--select-seconds", type=float, default=25.0, help="time for the pre-match role search")
-    ap.add_argument("--es-seconds", type=float, default=8.0)
+    ap.add_argument("--select-seconds", type=float, default=18.0, help="hard cap for the pre-match role search")
     a = ap.parse_args()
     token = os.environ.get("HEXUDON_TOKEN")
     if not token:
         sys.exit("set HEXUDON_TOKEN first")
     cl = ContestApiClient(a.base_url, token, a.game_id, practice=a.practice)
 
-    cfg, day_secs = config_from_official(cl.get_config())
+    cache = f"ref/config_{a.game_id.replace(':', '_')}.json"   # /config may be one-time: keep a local copy
+    try:
+        raw_cfg = cl.get_config()
+        os.makedirs("ref", exist_ok=True)
+        json.dump(raw_cfg, open(cache, "w", encoding="utf-8"))
+    except Exception as e:                                       # noqa: BLE001
+        if not os.path.exists(cache):
+            raise
+        print("get_config failed (", e, ") - using cached", cache)
+        raw_cfg = json.load(open(cache, encoding="utf-8"))
+    cfg, day_secs = config_from_official(raw_cfg)
     eng = HexudonEngine(cfg)
     solver = HexudonSolver(cfg, seed=42)
     solver.plan_budget_ms = max(120.0, min(2000.0, 0.35 * min(day_secs) * 1000.0))
-    solver.role_time_s = a.select_seconds / 3.0
-    solver.evolve_time_s = a.es_seconds
+    solver.role_total_s = a.select_seconds   # hard cap: the server's agent-type window is short (30 s on practice boards)
+    solver.evolve_time_s = 0.0
     t0 = time.time()
     roles = solver.select_roles()
     print(f"roles chosen in {time.time()-t0:.1f}s: {[r.value[0] for r in roles]} budget={solver.plan_budget_ms:.0f}ms")
@@ -58,13 +67,14 @@ def main():
             time.sleep(0.4); continue
         di = day_from_official(raw, cfg, collected)
         starts = [ag.cell_id for ag in di.agents]
-        ends_at = float(raw.get("endsAt", time.time() + 5))
-        quick = solver.plan_day(di, time_budget_ms=60.0)
-        qres = eng.simulate_day(di, quick, record_frames=False)
-        if not qres.valid:
-            quick = [[Action.wait(di.max_steps)] for _ in di.agents]
-            qres = eng.simulate_day(di, quick, record_frames=False)
-        best, best_res = quick, qres
+        ends_at = float(raw.get("endsAt") or time.time() + 5)
+        def plan_valid(budget):
+            acts = solver.plan_day(di, time_budget_ms=budget)
+            res = eng.simulate_day(di, acts, record_frames=False)
+            if not res.valid:                                  # one bad agent voids the whole team plan: never send it
+                acts = [[Action.wait(di.max_steps)] for _ in di.agents]
+                res = eng.simulate_day(di, acts, record_frames=False)
+            return acts, res
 
         def send(acts):
             plan = actions_to_official(cfg, starts, acts)
@@ -78,13 +88,17 @@ def main():
                     print("submit rejected", e.code, "with day =", d + off, e.read()[:300])
             raise RuntimeError("submission rejected")
 
-        send(best)
-        remaining = ends_at - time.time()
-        if remaining > 1.5:
-            deep = solver.plan_day(di, time_budget_ms=solver.plan_budget_ms)
-            dres = eng.simulate_day(di, deep, record_frames=False)
-            if dres.valid and f123(di, dres) > f123(di, qres) and ends_at - time.time() > 0.4:
-                send(deep); best, best_res = deep, dres
+        if a.practice:
+            # Practice is self-paced: the server advances as soon as we submit, so plan once (deep) and send once.
+            best, best_res = plan_valid(solver.plan_budget_ms)
+            send(best)
+        else:
+            best, best_res = plan_valid(60.0)                  # quick valid plan first, so something valid is in
+            send(best)
+            if ends_at - time.time() > 1.5:
+                deep, dres = plan_valid(solver.plan_budget_ms)
+                if dres.valid and f123(di, dres) > f123(di, best_res) and ends_at - time.time() > 0.4:
+                    send(deep); best, best_res = deep, dres
         collected |= best_res.chains_collected_today
         handled = d
         print(f"day {d+1}: F1-F3 so far {f123(di, best_res)} total chains {len(collected)}")

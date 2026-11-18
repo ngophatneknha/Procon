@@ -109,7 +109,7 @@ class TestOnlineMock(unittest.TestCase):
         env = dict(os.environ, HEXUDON_TOKEN="test-token", PYTHONIOENCODING="utf-8")
         out = subprocess.run(
             [sys.executable, "run_online.py", "--base-url", f"http://127.0.0.1:{srv.server_port}",
-             "--game-id", "g", "--practice", "--select-seconds", "3", "--es-seconds", "1"],
+             "--game-id", "g", "--practice", "--select-seconds", "3"],
             capture_output=True, text=True, env=env, timeout=240,
             cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         srv.shutdown()

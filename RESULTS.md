@@ -40,3 +40,10 @@ Máy giả lập tự dựng (chưa có API/BTC thật). Mọi số liệu dư�
 ## 5. Ghi chú vận hành
 - Dùng tối đa 2 tiến trình (8 tiến trình đã làm tràn RAM).
 - `HEX_OLD_ROLES=1` bật lại cách chọn vai trò cũ để so A/B.
+
+## Thí nghiệm 14 — chạy thật trên server Practice (Q1, 5 xe thật)
+- Lệnh: `run_online.py --practice --select-seconds 7` (token qua biến môi trường). Chọn vai trò 8.7 s: `P P R P P`; 2000 ms/ngày.
+- Server: **F1 = 32/32, F2 = 288, F3 = 332** (trước đó 32 / 273 / 290). Khớp tuyệt đối với mô phỏng phía client ⇒ bộ mô phỏng đúng luật.
+- `day` trong body POST: server chấp nhận thử `d+1` bị 409 ("submit day 1 before day 2"), rồi `d+0` được nhận; client tự nhớ.
+- Đọc kết quả: `GET /api/game/result?game_id=<id>:83` hoặc `/api/game/practice/score` → `distinct_types`=F1, `cumulative_daily_types`=F2, `total_servings`=F3, `cumulative_response_time`=F4.
+- Mô phỏng Q1–Q5 (800 ms): F2 294/319/312/301/307, F3 339/433/363/346/358.

@@ -142,7 +142,8 @@ class ContestApiClient:
         url = f"{self.base_url}/{path.lstrip('/')}"
         if params:
             url += "?" + urllib.parse.urlencode(params)
-        headers = {"Authorization": f"Bearer {self.token}", "Content-Type": "application/json"}
+        headers = {"Authorization": f"Bearer {self.token}", "Content-Type": "application/json",
+                   "User-Agent": "hexudon-client/1.0"}   # default Python UA gets a 403 from the server
         data = json.dumps(payload).encode("utf-8") if payload is not None else None
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
         with urllib.request.urlopen(req, timeout=self.timeout_sec) as resp:

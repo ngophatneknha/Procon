@@ -179,11 +179,15 @@ class HexudonSolver:
             # roll out every refuel-subset up to kmax instead of a hand-picked few.
             import itertools
             kmax = min(3 if n >= 7 else 2, n - 1)
+            # With a hard total deadline (online play) try the most plausible sizes first: 1, 2, 0, 3 tankers.
+            sizes = [1, 2, 0, 3][: kmax + 1] if getattr(self, "role_total_s", None) else range(0, kmax + 1)
             candidates = [
                 [AgentRole.REFUEL if k in refs else AgentRole.PATROL for k in range(n)]
-                for kk in range(0, kmax + 1)
+                for kk in sizes
                 for refs in itertools.combinations(range(n), kk)
             ]
+        total_s = getattr(self, "role_total_s", None)  # hard cap (s) for the whole role search, e.g. server's 30 s window
+        t_all = time.perf_counter()
 
         if not use_simulation_rollout or len(candidates) == 1:
             return candidates[0]
@@ -195,16 +199,22 @@ class HexudonSolver:
             # Stage 1: cheap 1-config rollout on all subsets, time-capped; stage 2: full rollout on top 8 (HEX_OLD_ROLES=1 restores the old hand-picked candidates for A/B).
             t0 = time.perf_counter()
             cheap = []
+            cap_b = min(getattr(self, "role_time_s", 8.0), 0.45 * total_s) if total_s else getattr(self, "role_time_s", 8.0)
             for roles in candidates:
-                if time.perf_counter() - t0 > getattr(self, "role_time_s", 8.0):
+                if cheap and time.perf_counter() - t0 > cap_b:
                     break
-                cheap.append((self._quick_rollout_roles(roles, n_cfg=1), roles))
+                cheap.append((self._quick_rollout_roles(roles, n_cfg=1, max_days=3 if total_s else 99), roles))
             cheap.sort(key=lambda x: x[0], reverse=True)
-            candidates = [r for _, r in cheap[:5]]
+            candidates = [r for _, r in cheap[: 3 if total_s else 5]]
 
-        scored = sorted(((self._quick_rollout_roles(r), r) for r in candidates), key=lambda x: x[0], reverse=True)
+        scored_l = []
+        for r in candidates:
+            if scored_l and total_s and time.perf_counter() - t_all > 0.85 * total_s:
+                break
+            scored_l.append((self._quick_rollout_roles(r), r))
+        scored = sorted(scored_l, key=lambda x: x[0], reverse=True)
         best_roles = scored[0][1]
-        if os.environ.get("HEX_OLD_ROLES") == "1" or os.environ.get("HEX_PLAYSEL") == "0" or len(scored) == 1:
+        if total_s or os.environ.get("HEX_OLD_ROLES") == "1" or os.environ.get("HEX_PLAYSEL") == "0" or len(scored) == 1:
             return best_roles
         # Stage 3: the quick rollout mis-ranks some maps (maps 39, 105) and play-through varies by seed.
         # Plan is deterministic per seed, so pick the best (roles, seed) by actually playing, then reuse the seed.
@@ -370,7 +380,7 @@ class HexudonSolver:
             },
         ]
 
-    def _quick_rollout_roles(self, roles: List[AgentRole], n_cfg: int = 99) -> Tuple[int, int, int]:
+    def _quick_rollout_roles(self, roles: List[AgentRole], n_cfg: int = 99, max_days: int = 99) -> Tuple[int, int, int]:
         agents = self.engine.create_initial_agents(roles)
         collected_overall: Set[int] = set()
         daily_unique_sum = 0
@@ -378,7 +388,7 @@ class HexudonSolver:
         history_road_stays: List[Dict[int, int]] = []
         portfolio = self._get_deterministic_portfolio()[:n_cfg]
 
-        for day in range(1, self.config.num_days + 1):
+        for day in range(1, min(self.config.num_days, max_days) + 1):
             max_steps = self.config.steps_per_day[day - 1]
             road_states = self.engine.compute_road_states(history_road_stays, day)
             spot_stocks = {cid: sp.max_stock for cid, sp in self.config.spots.items()}
