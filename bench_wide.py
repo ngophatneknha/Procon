@@ -11,7 +11,8 @@ def make(i):
     cfg = generate_map_config(
         width=r.randint(8, 32), height=r.randint(8, 32), num_agents=r.randint(3, 8),
         num_spots=r.randint(8, 45), num_chains=r.randint(3, 24), num_days=r.randint(4, 10),
-        max_fuel=r.randint(10, 24), seed=5000 + i)
+        max_fuel=r.randint(10, 24), seed=5000 + i,
+        steps_range=tuple(int(x) for x in __import__('os').environ.get('HEX_STEPS', '24,42').split(',')))
     return cfg
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any, Dict, List, Optional, Set
 
@@ -123,87 +124,40 @@ class MatchRunner:
 
 
 class ContestApiClient:
-    """
-    HTTP/JSON client adapter for communicating with the Procon Contest Server.
-    Follows the 6-step match progression defined in the specification:
-      1. Fetch initial MapConfig & submit AgentRoles.
-      2. For each day d = 1..num_days:
-         - Fetch DayInput (agent positions, fuel, road traffic states).
-         - Compute & validate actions via HexudonSolver.
-         - Submit actions before the day's response deadline.
+    """HTTP client for the official HEXUDON server (endpoints from its OpenAPI; formats from schema.pdf).
+
+    Flow: get_config -> select_types -> loop { get_day -> submit_actions }.
+    `practice=True` posts to /api/game/practice/actions; use a game id of the form "<game_id>:<team_id>"
+    for config/day in practice (see PLATFORM_NOTES.md). The bearer token is the JWT shown by the website.
     """
 
-    def __init__(self, base_url: str, token: str, timeout_sec: float = 5.0):
+    def __init__(self, base_url: str, token: str, game_id: str, practice: bool = False, timeout_sec: float = 4.0):
         self.base_url = base_url.rstrip("/")
         self.token = token
+        self.game_id = game_id
+        self.practice = practice
         self.timeout_sec = timeout_sec
 
-    def _request(self, method: str, path: str, payload: Optional[dict] = None) -> dict:
+    def _request(self, method: str, path: str, payload: Optional[dict] = None, params: Optional[dict] = None) -> Any:
         url = f"{self.base_url}/{path.lstrip('/')}"
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.token}",
-            "X-API-Token": self.token,
-        }
+        if params:
+            url += "?" + urllib.parse.urlencode(params)
+        headers = {"Authorization": f"Bearer {self.token}", "Content-Type": "application/json"}
         data = json.dumps(payload).encode("utf-8") if payload is not None else None
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
         with urllib.request.urlopen(req, timeout=self.timeout_sec) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+            body = resp.read().decode("utf-8")
+            return json.loads(body) if body else {}
 
-    def get_map_config(self, match_id: str) -> MapConfig:
-        raw = self._request("GET", f"/matches/{match_id}/config")
-        return MapConfig.from_dict(raw)
+    def get_config(self) -> dict:
+        return self._request("GET", "/api/game/config", params={"game_id": self.game_id})
 
-    def submit_roles(self, match_id: str, roles: List[AgentRole]) -> dict:
-        payload = {"roles": [r.value for r in roles]}
-        return self._request("POST", f"/matches/{match_id}/roles", payload)
+    def select_types(self, types: List[int]) -> Any:
+        return self._request("POST", "/api/game/agent-types", {"game_id": self.game_id, "types": types})
 
-    def submit_day_actions(
-        self, match_id: str, day: int, actions: List[List[Action]]
-    ) -> dict:
-        payload = {
-            "day": day,
-            "actions": [[a.to_dict() for a in ag_acts] for ag_acts in actions],
-        }
-        return self._request("POST", f"/matches/{match_id}/days/{day}/actions", payload)
+    def get_day(self) -> dict:
+        return self._request("GET", "/api/game/day", params={"game_id": self.game_id})
 
-    def plan_and_submit_dual_commit(
-        self,
-        match_id: str,
-        day_input: DayInput,
-        solver: HexudonSolver,
-        deep_budget_ms: float = 500.0,
-    ) -> List[List[Action]]:
-        """
-        Championship Dual-Commit Strategy for Priority 4 + Note 5 & 6:
-          1. Ultra-Fast Commit (~15-30ms): Immediately compute & submit a valid high-quality plan
-             to lock in an ultra-low response timestamp on the contest server.
-          2. Conditional Deep Upgrade: Run deeper rollout search; ONLY resubmit if the new plan
-             achieves a STRICTLY HIGHER (F1, F2, F3) tuple (never resubmit on ties, preserving
-             the fast response timestamp from Commit 1!).
-        """
-        # Commit 1: Fast deterministic pass
-        fast_actions = solver.plan_day(day_input, time_budget_ms=15.0)
-        fast_res = solver.engine.simulate_day(day_input, fast_actions, record_frames=False)
-        self.submit_day_actions(match_id, day_input.day, fast_actions)
-
-        fast_f123 = (
-            len(day_input.collected_chains_overall | fast_res.chains_collected_today),
-            len(fast_res.chains_collected_today),
-            fast_res.portions_collected_today,
-        )
-
-        # Commit 2: Deep lookahead search
-        deep_actions = solver.plan_day(day_input, time_budget_ms=deep_budget_ms)
-        deep_res = solver.engine.simulate_day(day_input, deep_actions, record_frames=False)
-        if deep_res.valid:
-            deep_f123 = (
-                len(day_input.collected_chains_overall | deep_res.chains_collected_today),
-                len(deep_res.chains_collected_today),
-                deep_res.portions_collected_today,
-            )
-            if deep_f123 > fast_f123:
-                self.submit_day_actions(match_id, day_input.day, deep_actions)
-                return deep_actions
-
-        return fast_actions
+    def submit_actions(self, day: int, plan: List[List[int]]) -> Any:
+        path = "/api/game/practice/actions" if self.practice else "/api/game/actions"
+        return self._request("POST", path, {"game_id": self.game_id, "day": day, "actions": plan})

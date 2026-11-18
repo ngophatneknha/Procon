@@ -491,20 +491,20 @@ python run_benchmark.py       # PHẦN 2 in bảng xếp hạng 4 đội trên 4
 
 ---
 
-## 15. Gửi đáp án lên server (`client.py`)
+## 15. Gửi đáp án lên server (`protocol.py`, `client.py`, `run_online.py`)
 
-- `MatchRunner.run_match(time_budget_ms_per_day)`: chạy trận nội bộ, ghi replay; đặt `solver.plan_budget_ms` bằng ngân sách mỗi ngày trước khi `select_roles`.
-- `ContestApiClient`: `get_map_config`, `submit_roles`, `submit_day_actions`, `plan_and_submit_dual_commit`.
+Định dạng chính thức và endpoint xem [PLATFORM_NOTES.md](PLATFORM_NOTES.md).
 
-**Dual-Commit hiện tại:** gửi lần 1 với ngân sách 15 ms, tìm sâu tiếp (500 ms), chỉ gửi lại nếu $(F_1,F_2,F_3)$ **lớn hơn hẳn**.
+- `protocol.py`: `config_from_official`, `day_from_official`, `types_to_official`, `actions_to_official` / `actions_from_official`. Hướng di chuyển $k\in\{0..5\}$ ↔ độ lệch $(\Delta r,\Delta c)$: hàng chẵn `[(-1,0),(-1,1),(0,1),(1,1),(1,0),(0,-1)]`, hàng lẻ `[(-1,-1),(-1,0),(0,1),(1,0),(1,-1),(0,-1)]`; chờ $w$ bước ↔ số nguyên $-w$.
+- `ContestApiClient`: `get_config`, `select_types`, `get_day`, `submit_actions` (Practice: `practice=True`).
+- `run_online.py`: vòng lặp một trận. **Mỗi ngày:** (1) lập kế hoạch nhanh (60 ms) và **gửi ngay** để luôn có bản hợp lệ; (2) nếu còn >1.5 s, lập kế hoạch sâu bằng `plan_budget_ms`; (3) chỉ gửi lại nếu $(F_1,F_2,F_3)$ **lớn hơn hẳn** và còn >0.4 s. Số chuỗi đã thu tự theo dõi bằng mô phỏng vì server không gửi. `--dry` chỉ lập kế hoạch và kiểm tra cục bộ, không gửi.
 
-> **Cảnh báo đã đối chiếu với đề:**
-> 1. Đề tính F4 theo **câu trả lời hợp lệ cuối cùng được chấp nhận**, nên gửi lại làm thời gian bị tính theo **lần gửi sau**. Chú thích "khóa F4 bằng lần gửi đầu" trong mã là **sai**.
-> 2. Đề cảnh báo gửi quá nhiều câu trả lời có thể bị coi là gây rối và bị loại (không nêu ngưỡng).
-> 3. Endpoint và schema JSON chỉ là phỏng đoán cho tới khi BTC công bố.
-> 4. `plan_and_submit_dual_commit` dùng ngân sách 15/500 ms, **khác** `plan_budget_ms` mà ES đã tinh chỉnh; hệ số $\beta$ vẫn áp dụng nhưng không còn được kiểm chứng đúng ngân sách. Khi chốt giới hạn thời gian của BTC nên đặt `plan_budget_ms` bằng đúng ngân sách dùng khi nộp.
+```bash
+set HEXUDON_TOKEN=<JWT lấy từ website>         # không ghi ra file, không in ra
+python run_online.py --base-url https://hexudon.hairbui76.id.vn --game-id <id> --practice
+```
 
----
+> **Lưu ý đã đối chiếu với đề:** F4 tính theo **câu trả lời hợp lệ cuối cùng**, nên gửi lại làm thời gian bị tính theo lần gửi sau; gửi quá nhiều lần có thể bị coi là gây rối ⇒ tối đa 2 lần mỗi ngày. Một xe sai thì cả kế hoạch bị loại ⇒ mọi kế hoạch đều qua engine trước khi gửi, và nếu không hợp lệ thì gửi "tất cả chờ".
 
 ## 16. Bảng tham số và công tắc môi trường
 

@@ -556,6 +556,9 @@ class HexudonSolver:
             )
             candidates_today.extend(ls_candidates)
             candidates_today.sort(key=lambda item: item[0], reverse=True)
+            if os.environ.get("HEX_BEAM") != "0" and time_budget_ms >= 60.0:
+                candidates_today.extend(self._beam_tours(day_input, candidates_today[0], apsp_steps, apsp_fuel))
+                candidates_today.sort(key=lambda item: item[0], reverse=True)
             if os.environ.get("HEX_ILS") != "0":
                 candidates_today.extend(
                     self._ils_tours(day_input, candidates_today[0], apsp_steps, apsp_fuel, min(200, int(time_budget_ms / 5)))
@@ -855,6 +858,95 @@ class HexudonSolver:
                 _try_Forced_tours(best_swap_tours)
 
         return results
+
+    def _beam_tour(self, start, spots, stocks, steps_left, fuel_left, dist_steps, dist_fuel,
+                   chains_overall, others_chains, width):
+        """Beam-search orienteering for ONE patrol. State = (last spot, visited set); value follows the
+        reward ladder 1e6 (new chain overall) > 1e4 (new chain vs. other patrols today) > 100 (portion)."""
+        cfg = self.config
+        def val(sp_cell, have):
+            ch = cfg.spots[sp_cell].chain_id
+            v = 100.0
+            if ch not in have:
+                v += 10_000.0
+                if ch not in chains_overall:
+                    v += 1_000_000.0
+            return v
+        # state: (value, -steps, fuel_left, last, seq(tuple), chains(frozenset))
+        beam = [(0.0, 0, fuel_left, start, (), frozenset(others_chains))]
+        best = beam[0]
+        for _ in range(len(spots)):
+            nxt = {}
+            for v0, nst, fl, last, seq, have in beam:
+                used = -nst
+                for sc in spots:
+                    if sc in seq or sc == last:
+                        continue
+                    ds = dist_steps[last][sc]
+                    df = dist_fuel[last][sc]
+                    if used + ds > steps_left or df > fl:
+                        continue
+                    ch = cfg.spots[sc].chain_id
+                    st = (v0 + val(sc, have), -(used + ds), fl - df, sc, seq + (sc,), have | {ch})
+                    key = (sc, frozenset(seq) | {sc})
+                    old = nxt.get(key)
+                    if old is None or (st[0], st[1]) > (old[0], old[1]):
+                        nxt[key] = st
+            if not nxt:
+                break
+            beam = sorted(nxt.values(), key=lambda t: (t[0], t[1]), reverse=True)[:width]
+            if (beam[0][0], beam[0][1]) > (best[0], best[1]):
+                best = beam[0]
+        return list(best[4])
+
+    def _beam_tours(self, day_input, start, apsp_steps, apsp_fuel):
+        """Coordinate descent over patrols: re-optimise one patrol's tour with beam search while the other
+        patrols' spots are fixed (their chains are not worth again today), rebuild with forced tours, keep if
+        the day key does not get worse. Fills the ~5% single-agent routing gap measured by exp_gap.py."""
+        dist_steps, dist_fuel, _ = apsp_steps
+        start_cells = {ag.agent_id: ag.cell_id for ag in day_input.agents if ag.role == AgentRole.PATROL}
+        fuels = {ag.agent_id: ag.fuel for ag in day_input.agents if ag.role == AgentRole.PATROL}
+        pids = sorted(start_cells)
+        if not pids:
+            return []
+        cfg = self.config
+        cur_key, _, _, cur_tours = start
+        tours = {pid: list(cur_tours.get(pid, [])) for pid in pids}
+        spots = [sc for sc, sp in cfg.spots.items() if sp.max_stock > 0]
+        width = 24
+        out = []
+        for _round in range(2):
+            changed = False
+            for pid in self.rng.sample(pids, len(pids)):
+                others = [sc for q in pids if q != pid for sc in tours[q]]
+                cap = {}
+                for sc in others:
+                    cap[sc] = cap.get(sc, 0) + 1
+                avail = [sc for sc in spots if cfg.spots[sc].max_stock - cap.get(sc, 0) > 0]
+                others_chains = {cfg.spots[sc].chain_id for sc in others}
+                new = self._beam_tour(start_cells[pid], avail, None, day_input.max_steps, fuels[pid],
+                                      dist_steps, dist_fuel, day_input.collected_chains_overall, others_chains, width)
+                if not new or new == tours[pid]:
+                    continue
+                trial = dict(tours)
+                trial[pid] = new
+                acts, new_tours = self._build_schedule(
+                    day_input=day_input, apsp=apsp_steps, apsp_fuel=apsp_fuel, refuel_threshold=0.4, noise=0.0,
+                    cluster_bias=0.10, lookahead_weight=0.25, apsp_refuel=apsp_steps, scarcity_weight=0.25,
+                    gravity_weight=15.0, use_2opt=True, forced_tours=trial)
+                res = self.engine.simulate_day(day_input, acts, record_frames=False)
+                if not res.valid:
+                    continue
+                ek = self._evaluate_day_result(day_input, res, apsp_steps)
+                if ek >= cur_key:
+                    if ek > cur_key:
+                        out.append((ek, res, acts, new_tours))
+                        changed = True
+                    cur_key = ek
+                    tours = {q: list(new_tours.get(q, [])) for q in pids}
+            if not changed:
+                break
+        return out
 
     def _ils_tours(self, day_input, start, apsp_steps, apsp_fuel, n_iter):
         """Iterated local search on per-patrol spot sequences (ruin & recreate): perturb the tours, rebuild the

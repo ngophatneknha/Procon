@@ -37,6 +37,7 @@ def generate_map_config(
     num_days: int = 6,
     max_fuel: int = 18,
     seed: int = 2026,
+    steps_range: tuple = (24, 42),
 ) -> MapConfig:
     """
     Generate a valid, connected HEXUDON map configuration matching all official constraints:
@@ -119,7 +120,7 @@ def generate_map_config(
         max_stock = rng.randint(1, min(3, num_agents))
         spots[cell_id] = Spot(cell_id=cell_id, chain_id=chain_id, max_stock=max_stock)
 
-    steps_per_day = [rng.randint(24, 42) for _ in range(num_days)]
+    steps_per_day = [rng.randint(*steps_range) for _ in range(num_days)]
 
     return MapConfig(
         width=width,
