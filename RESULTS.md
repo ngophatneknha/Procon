@@ -20,6 +20,9 @@ Máy giả lập tự dựng (chưa có API/BTC thật). Mọi số liệu dư�
 | 8 | Quét hợp lệ 24 map mới (id 100–123, 100 ms) | 0 lỗi/invalid; F1 đủ 23/24 (map 105 thiếu 1 chuỗi do chọn vai trò sai: quick-rollout xếp hạng sai) |
 | 9 | `plan_day` tất định theo (seed, ngày) (đếm vòng lặp thay vì đồng hồ) + chọn (vai trò, seed) tốt nhất bằng chơi thử top 3 vai trò × 3 seed | 13 map, 120 ms: F1 đủ **11/13 → 12/13** (map 105 sửa được), F2 1118→1136, F3 1871→1914. Chọn vai trò tối đa ~30 s trên map 32x32/8 xe (`role_time_s`=8 s mỗi giai đoạn, chỉnh được) |
 | 10 | (1+1)-ES tiến hóa hệ số ưu tiên (ngày, quán) cho bộ dựng lịch tham lam; fitness = chơi cả trận ở ngân sách thật; chỉ giữ nếu kiểm chứng tốt hơn (`evolve_time_s`=15 s, `HEX_ES=0` để tắt). Tune ở ngân sách rẻ (30 ms) KHÔNG chuyển sang ngân sách thật → phải đánh giá ở ngân sách thật | 13 map, 120 ms: F1 đủ 12/13, F2 1132→1134, F3 **1882→1918**; map 39 F1 16→17 |
+| 11 | Tăng ES từ 15 s lên 60 s; tăng số rollout ngẫu nhiên 28→600 và ngân sách 120→1000 ms | Không cải thiện (F2 +8, F3 −20 / F2 +8, F3 −15, trong nhiễu) → thêm thời gian/rollout ngẫu nhiên KHÔNG giúp; cần toán tử tìm kiếm tốt hơn |
+| 12 | ILS trên lộ trình từng xe (`_ils_tours`: bỏ/chèn/chuyển/đổi chéo quán, 2-opt, dựng lại bằng builder tham lam; tắt bằng `HEX_ILS=0`), 400 ms, 10 map, tắt ES/PLAYSEL để cô lập | F2 979→998, F3 1410→1430, không map nào tụt F1 |
+| 13 | Tất cả bật cùng nhau (roles + seed + horizon + ES + ILS), 120 ms, 13 map | F1 đủ 12/13, F2 1136, F3 **1941** (so 1882 trước ES); map 39 F1 18/20 |
 
 ## 3. Còn tồn tại
 - Map 39 (29x29, 20 chuỗi, 4 ngày, 2 xe tuần tra): F1 chỉ 14–17/20, dao động giữa các lần chạy → bộ lập kế hoạch từng ngày yếu khi ít xe/ít ngày; cần lập kế hoạch phủ chuỗi nhiều ngày.

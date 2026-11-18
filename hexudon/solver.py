@@ -220,7 +220,7 @@ class HexudonSolver:
                     best_play = (sc, roles, sd)
         self.seed = best_play[2]
         if os.environ.get("HEX_ES") != "0":
-            self.spot_bias = self._evolve_bias(best_play[1], getattr(self, "evolve_time_s", 15.0))
+            self.spot_bias = self._evolve_bias(best_play[1], float(os.environ.get("HEX_ES_TIME", getattr(self, "evolve_time_s", 15.0))))
         return best_play[1]
 
     def _evolve_bias(self, roles: List[AgentRole], time_s: float) -> Dict[Tuple[int, int], float]:
@@ -486,7 +486,7 @@ class HexudonSolver:
 
         # Phase 2: High-throughput stochastic rollouts
         rollout_idx = 0
-        while rollout_idx < min(28, int(time_budget_ms / 15)):
+        while rollout_idx < min(600, int(time_budget_ms / 15)):
             rollout_idx += 1
             mode = self.rng.choice(["steps", "balanced", "fuel"])
             apsp = apsp_steps if mode == "steps" else (apsp_fuel if mode == "fuel" else apsp_balanced)
@@ -556,6 +556,11 @@ class HexudonSolver:
             )
             candidates_today.extend(ls_candidates)
             candidates_today.sort(key=lambda item: item[0], reverse=True)
+            if os.environ.get("HEX_ILS") != "0":
+                candidates_today.extend(
+                    self._ils_tours(day_input, candidates_today[0], apsp_steps, apsp_fuel, min(200, int(time_budget_ms / 5)))
+                )
+                candidates_today.sort(key=lambda item: item[0], reverse=True)
 
         if day_input.day >= self.config.num_days:
             return candidates_today[0][2]
@@ -850,6 +855,72 @@ class HexudonSolver:
                 _try_Forced_tours(best_swap_tours)
 
         return results
+
+    def _ils_tours(self, day_input, start, apsp_steps, apsp_fuel, n_iter):
+        """Iterated local search on per-patrol spot sequences (ruin & recreate): perturb the tours, rebuild the
+        day with the greedy builder forced onto them, keep the change if the day key does not get worse.
+        Extends the old single-pass Phase 3 into a real search; returns the improved candidates."""
+        dist_steps, dist_fuel, _ = apsp_steps
+        start_cells = {ag.agent_id: ag.cell_id for ag in day_input.agents if ag.role == AgentRole.PATROL}
+        pids = sorted(start_cells)
+        if not pids:
+            return []
+        rng = self.rng
+        all_spots = list(self.config.spots)
+        cur_key, cur_res, cur_acts, cur_tours = start
+        cur_tours = {pid: list(cur_tours.get(pid, [])) for pid in pids}
+        out = []
+
+        def best_pos(pid, sc):
+            seq = cur_tours_try[pid]
+            best = (10**9, 0)
+            for pos in range(len(seq) + 1):
+                prev_c = start_cells[pid] if pos == 0 else seq[pos - 1]
+                d = dist_steps[prev_c][sc] + (dist_steps[sc][seq[pos]] - dist_steps[prev_c][seq[pos]] if pos < len(seq) else 0)
+                if d < best[0]:
+                    best = (d, pos)
+            return best[1]
+
+        for _ in range(n_iter):
+            cur_tours_try = {pid: list(v) for pid, v in cur_tours.items()}
+            op = rng.randrange(4)
+            pid = rng.choice(pids)
+            if op == 0 and cur_tours_try[pid]:  # drop a spot
+                cur_tours_try[pid].pop(rng.randrange(len(cur_tours_try[pid])))
+            elif op == 1:  # insert any spot at cheapest position (steals it from another tour)
+                sc = rng.choice(all_spots)
+                for q in pids:
+                    if sc in cur_tours_try[q]:
+                        cur_tours_try[q].remove(sc)
+                cur_tours_try[pid].insert(best_pos(pid, sc), sc)
+            elif op == 2 and cur_tours_try[pid]:  # relocate a spot to another patrol
+                sc = cur_tours_try[pid].pop(rng.randrange(len(cur_tours_try[pid])))
+                q = rng.choice(pids)
+                cur_tours_try[q].insert(best_pos(q, sc), sc)
+            elif op == 3:  # swap two spots across tours
+                q = rng.choice(pids)
+                if cur_tours_try[pid] and cur_tours_try[q] and q != pid:
+                    i, j = rng.randrange(len(cur_tours_try[pid])), rng.randrange(len(cur_tours_try[q]))
+                    cur_tours_try[pid][i], cur_tours_try[q][j] = cur_tours_try[q][j], cur_tours_try[pid][i]
+            for q in (pid,):
+                if len(cur_tours_try[q]) >= 2:
+                    cur_tours_try[q] = optimize_spot_sequence_2opt(
+                        start_cell=start_cells[q], spot_seq=cur_tours_try[q], dist_steps=dist_steps,
+                        dist_fuel=dist_fuel, max_fuel_budget=self.config.max_fuel * 3)
+            acts, new_tours = self._build_schedule(
+                day_input=day_input, apsp=apsp_steps, apsp_fuel=apsp_fuel, refuel_threshold=0.4, noise=0.0,
+                cluster_bias=0.10, lookahead_weight=0.25, apsp_refuel=apsp_steps, scarcity_weight=0.25,
+                gravity_weight=15.0, use_2opt=True, forced_tours=cur_tours_try)
+            res = self.engine.simulate_day(day_input, acts, record_frames=False)
+            if not res.valid:
+                continue
+            ek = self._evaluate_day_result(day_input, res, apsp_steps)
+            if ek >= cur_key:
+                if ek > cur_key:
+                    out.append((ek, res, acts, new_tours))
+                cur_key = ek
+                cur_tours = {pid2: list(new_tours.get(pid2, [])) for pid2 in pids}
+        return out
 
     def _compute_apsp(
         self,
