@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+bench_wide_out.json
+out_*.json
+o2_*.json
+o3_*.json
