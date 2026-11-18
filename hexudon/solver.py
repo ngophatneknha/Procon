@@ -108,6 +108,7 @@ class HexudonSolver:
         self.seed = seed
         self.rng = random.Random(seed)
         self.plan_budget_ms = 120.0
+        self.spot_bias: Dict[Tuple[int, int], float] = {}  # (day, spot cell) -> score multiplier, tuned pre-match
         self._apsp_cache: Dict[Tuple[int, str], Tuple[List[List[int]], List[List[int]], List[List[int]]]] = {}
 
     def select_roles(self, use_simulation_rollout: bool = True) -> List[AgentRole]:
@@ -218,7 +219,36 @@ class HexudonSolver:
                 if best_play is None or sc > best_play[0]:
                     best_play = (sc, roles, sd)
         self.seed = best_play[2]
+        if os.environ.get("HEX_ES") != "0":
+            self.spot_bias = self._evolve_bias(best_play[1], getattr(self, "evolve_time_s", 15.0))
         return best_play[1]
+
+    def _evolve_bias(self, roles: List[AgentRole], time_s: float) -> Dict[Tuple[int, int], float]:
+        """(1+1)-ES over per-(day, spot) priority multipliers for the greedy builder. Whole-match play-through
+        is the fitness (F1,F2,F3 lexicographic): it learns WHICH day should take WHICH spot, which the
+        day-greedy planner cannot see. Tune with a cheap budget, then verify at the real budget (planner is
+        deterministic, so the verification is exactly what the match will replay in the 1-team case)."""
+        rng = random.Random(self.seed + 1)
+        spots = list(self.config.spots)
+        D = self.config.num_days
+        self.spot_bias = {}
+        best = self._play_rollout_roles(roles, self.plan_budget_ms)
+        best_bias: Dict[Tuple[int, int], float] = {}
+        t0 = time.perf_counter()
+        while time.perf_counter() - t0 < time_s:
+            cand = dict(best_bias)
+            for _ in range(rng.choice([1, 2, 3])):
+                key = (rng.randint(1, D), rng.choice(spots))
+                cand[key] = min(10.0, max(0.1, cand.get(key, 1.0) * rng.choice([0.25, 0.5, 2.0, 4.0])))
+            self.spot_bias = cand
+            sc = self._play_rollout_roles(roles, self.plan_budget_ms)
+            if sc >= best:
+                best, best_bias = sc, cand
+        self.spot_bias = {}
+        base_real = self._play_rollout_roles(roles, self.plan_budget_ms)
+        self.spot_bias = best_bias
+        tuned_real = self._play_rollout_roles(roles, self.plan_budget_ms)
+        return best_bias if tuned_real > base_real else {}
 
     def _play_rollout_roles(self, roles: List[AgentRole], budget_ms: float) -> Tuple[int, int, int]:
         agents = self.engine.create_initial_agents(roles)
@@ -1088,6 +1118,7 @@ class HexudonSolver:
 
                     if noise > 0.0:
                         score *= 1.0 + self.rng.uniform(-noise, noise)
+                    score *= self.spot_bias.get((day_input.day, sc), 1.0)
 
                     if score > best_spot_score:
                         best_spot_score = score
